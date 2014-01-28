@@ -1,6 +1,6 @@
 import collections
 import sys
-
+from wordpress_xmlrpc.secure import SecureServerProxy
 from wordpress_xmlrpc.compat import xmlrpc_client, dict_type
 from wordpress_xmlrpc.exceptions import ServerConnectionError, UnsupportedXmlrpcMethodError, InvalidCredentialsError, XmlrpcDisabledError
 
@@ -13,18 +13,19 @@ class Client(object):
     `XmlrpcMethod`-derived class to `Client`'s `call` method.
     """
 
-    def __init__(self, url, username, password, blog_id=0):
+    def __init__(self, url, username='', password='', blog_id=0, public_key=None, private_key=None):
         self.url = url
         self.username = username
         self.password = password
         self.blog_id = blog_id
-
         try:
-            self.server = xmlrpc_client.ServerProxy(url, allow_none=True)
+            if public_key is not None and private_key is not None:
+              self.server = SecureServerProxy(url, allow_none=True, public_key=public_key, private_key=private_key)
+            else:
+              self.server = xmlrpc_client.ServerProxy(url, allow_none=True)
             self.supported_methods = self.server.mt.supportedMethods()
-        except xmlrpc_client.ProtocolError:
-            e = sys.exc_info()[1]
-            raise ServerConnectionError(repr(e))
+        except xmlrpc_client.ProtocolError,e:
+          print(e)
 
     def call(self, method):
         if method.method_name not in self.supported_methods:
@@ -32,7 +33,6 @@ class Client(object):
 
         server_method = getattr(self.server, method.method_name)
         args = method.get_args(self)
-
         try:
             raw_result = server_method(*args)
         except xmlrpc_client.Fault:
@@ -68,7 +68,7 @@ class XmlrpcMethod(object):
             if self.optional_args:
                 max_num_args = len(self.method_args) + len(self.optional_args)
                 if not (len(self.method_args) <= len(args) <= max_num_args):
-                    raise ValueError("Invalid number of parameters to %s" % self.method_name)
+                    raise ValueError("Invalid number of parameters to %s." % self.method_name)
             else:
                 if len(args) != len(self.method_args):
                     raise ValueError("Invalid number of parameters to %s" % self.method_name)
